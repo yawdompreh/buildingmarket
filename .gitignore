@@ -1,0 +1,14 @@
+node_modules/
+.env
+data.db
+data.db-*
+uploads/*
+!uploads/.gitkeep
+*.log
+server.err
+
+# local reference files
+*.html
+!public/index.html
+*.jpg
+*.png

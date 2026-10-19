@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BuildChain – Global Building Materials Marketplace</title>
+<style>
+:root{--o:#e8710a;--d:#1f2937;--g:#f3f4f6}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;color:var(--d);background:#fff}
+header{background:var(--d);color:#fff;padding:12px 24px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{margin:0;font-size:22px;color:var(--o)}header nav{display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center}
+button{background:var(--o);color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px}
+button.alt{background:#4b5563}
+.hero{background:linear-gradient(135deg,#1f2937,#374151);color:#fff;padding:48px 24px;text-align:center}
+.hero h2{font-size:32px;margin:0 0 8px}main{max-width:1100px;margin:auto;padding:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff}
+.card img,.ph{width:100%;height:150px;object-fit:cover;background:var(--g);display:block}
+.card div{padding:10px}.card .ph{padding:0}.price{color:var(--o);font-weight:700}
+input,select,textarea{width:100%;padding:8px;margin:4px 0 10px;border:1px solid #d1d5db;border-radius:6px;font:inherit}
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}.filters>*{flex:1;min-width:140px;margin:0}
+.panel{background:var(--g);padding:16px;border-radius:8px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #e5e7eb;font-size:14px}
+.msg{padding:10px;border-radius:6px;margin-bottom:12px;background:#fee2e2}.ok{background:#dcfce7}
+small{color:#6b7280}
+.tag{background:#fde8d3;color:var(--o);font-size:12px;padding:2px 8px;border-radius:10px}
+.thumbs{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 8px}.thumbs img,.thumbs video{width:60px;height:45px;object-fit:cover;border-radius:4px}
+</style></head><body>
+<header><h1>🏗 BuildChain</h1><nav id="nav"></nav></header>
+<div id="app"></div>
+<script>
+const COUNTRIES=["Argentina","Australia","Brazil","Canada","China","Egypt","France","Germany","Ghana","India","Indonesia","Italy","Japan","Kenya","Mexico","Netherlands","Nigeria","Saudi Arabia","South Africa","South Korea","Spain","Turkey","United Arab Emirates","United Kingdom","United States","Vietnam"];
+const CATS=["Cement & Concrete","Steel & Rebar","Timber & Wood","Bricks & Blocks","Tiles & Flooring","Roofing","Plumbing","Electrical","Paint & Coatings","Glass & Windows","Insulation","Tools & Hardware"];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token=localStorage.token,me=null,cart=JSON.parse(localStorage.cart||'[]');
+const opts=(a,all)=>(all?`<option value="">${all}</option>`:'')+a.map(x=>`<option>${x}</option>`).join('');
+const money=n=>'$'+Number(n).toFixed(2);
+async function api(p,method='GET',data){
+  const r=await fetch(p,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:data?JSON.stringify(data):undefined});
+  const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{}
+  if(!r.ok)throw new Error(j.error||`Server error (${r.status}). Open the site via the BuildChain server (npm start, http://localhost:3000), not a static file server.`);
+  return j}
+function msg(t,ok){const m=$('#m');if(m){m.className='msg'+(ok?' ok':'');m.textContent=t}}
+const saveCart=()=>{localStorage.cart=JSON.stringify(cart);nav()};
+function nav(){
+  $('#nav').innerHTML=`<button class="alt" onclick="shop()">Marketplace</button>`+
+  `<button class="alt" onclick="homes()">Houses & Land</button>`+
+  (me?.role==='supplier'?`<button class="alt" onclick="supplier()">My Products</button><button class="alt" onclick="sell()">List Property</button>`:'')+
+  (me?.role==='admin'?`<button class="alt" onclick="admin()">Admin</button><button class="alt" onclick="manage()">Manage Posts</button>`:'')+
+  (me?`<button class="alt" onclick="orders()">Orders</button>`:'')+
+  `<span style="flex:1"></span>`+
+  (!me||me.role==='buyer'?`<button onclick="checkout()">Cart (${cart.reduce((s,i)=>s+i.qty,0)})</button>`:'')+
+  (me?`<span>${esc(me.name)} (${me.role})</span><button class="alt" onclick="logout()">Logout</button>`:`<button onclick="auth()">Login / Sign up</button>`)}
+function logout(){localStorage.removeItem('token');token=me=null;nav();shop()}
+async function shop(){
+  $('#app').innerHTML=`<div class="hero"><h2>Source building materials from suppliers worldwide</h2>
+  <p>Pay by Visa, Mastercard, Discover or cash on delivery · Suppliers listed by country</p></div>
+  <main><div class="filters"><select id="fc" onchange="load()">${opts(COUNTRIES,'All countries')}</select>
+  <select id="fk" onchange="load()">${opts(CATS,'All categories')}</select>
+  <input id="fq" placeholder="Search…" oninput="load()"></div><div id="m"></div><div class="grid" id="list"></div></main>`;load()}
+async function load(){
+  const p=new URLSearchParams({country:$('#fc').value,category:$('#fk').value,q:$('#fq').value});
+  const items=await api('/api/products?'+p);window._items=items;
+  $('#list').innerHTML=items.map(i=>`<div class="card">${mediaHtml(i.media)}
+  <div><b>${esc(i.name)}</b><br><small>${esc(i.category)} · ${esc(i.country)}<br>by ${esc(i.supplier||'Supplier')}</small>
+  <p>${esc(i.description).slice(0,90)}</p><span class="price">${money(i.price)}</span> / ${esc(i.unit)}<br><small>${i.stock} in stock</small><br>
+  ${i.media.length>1?`<div class="thumbs">${i.media.slice(1).map(m=>m.kind==='video'?`<video src="${m.url}" controls preload="none"></video>`:`<a href="${m.url}" target="_blank"><img src="${m.url}" alt=""></a>`).join('')}</div>`:''}
+  <button onclick="add(${i.id})">Add to cart</button></div></div>`).join('')||'<p>No products found.</p>'}
+function add(id){const i=window._items.find(x=>x.id===id);const c=cart.find(x=>x.id===id);
+  if(c)c.qty++;else cart.push({id,name:i.name,price:i.price,qty:1});saveCart()}
+function auth(){
+  $('#app').innerHTML=`<main style="max-width:420px"><div id="m"></div><div class="panel"><h3>Login</h3>
+  <input id="le" placeholder="Email or username"><input id="lp" type="password" placeholder="Password"><button onclick="doLogin()">Login</button></div>
+  <div class="panel"><h3>Create account</h3><select id="sr"><option value="buyer">Buyer</option><option value="supplier">Supplier</option></select>
+  <input id="sn" placeholder="Full name"><input id="sc" placeholder="Company"><input id="se" placeholder="Email">
+  <input id="sp" type="password" placeholder="Password (8+ chars)"><select id="sk">${opts(COUNTRIES)}</select>
+  <button onclick="doSignup()">Sign up</button></div></main>`}
+async function sess(r){token=localStorage.token=r.token;me=r.user;nav();me.role==='supplier'?supplier():me.role==='admin'?admin():shop()}
+async function doLogin(){try{await sess(await api('/api/login','POST',{email:$('#le').value,password:$('#lp').value}))}catch(e){msg(e.message)}}
+async function doSignup(){try{await sess(await api('/api/signup','POST',{role:$('#sr').value,name:$('#sn').value,company:$('#sc').value,email:$('#se').value,password:$('#sp').value,country:$('#sk').value}))}catch(e){msg(e.message)}}
+function supplier(){
+  $('#app').innerHTML=`<main><div id="m"></div><div class="panel"><h3>Upload a product</h3>
+  <p><small>BuildChain charges a 5% commission on each sale. You receive 95%.</small></p>
+  <select id="pk">${opts(CATS)}</select><select id="pc">${opts(COUNTRIES)}</select>
+  <input id="pn" placeholder="Product name"><textarea id="pd" placeholder="Details / specifications"></textarea>
+  <input id="pp" type="number" step="0.01" placeholder="Price (USD)"><input id="pu" placeholder="Unit (e.g. bag, ton, m²)">
+  <input id="ps" type="number" placeholder="Stock quantity"><label><b>Photos & videos</b> <small>(PNG/JPG/WEBP up to 10MB, MP4/WEBM/MOV up to 200MB)</small></label>
+  <input id="pi" type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime"><div id="prog"></div>
+  <button id="pb" onclick="upload()">Publish</button></div><h3>My products</h3><div class="grid" id="mine"></div></main>`;
+  $('#pc').value=me.country;mine()}
+async function mine(){const a=await api('/api/my-products');window._mine=a;$('#mine').innerHTML=a.map(prodManageCard).join('')}
+const prodManageCard=i=>`<div class="card">${mediaHtml(i.media)}<div><b>${esc(i.name)}</b><br>${money(i.price)} / ${esc(i.unit)}<br><small>${i.stock} in stock · ${esc(i.country)}${i.supplier?' · '+esc(i.supplier):''}${i.media.length>1?` · ${i.media.length} files`:''}</small><br>
+  <button onclick="editProduct(${i.id})">Edit</button> <button class="alt" onclick="delProduct(${i.id})">Delete</button></div></div>`;
+const goBack=()=>me.role==='admin'?manage():supplier();
+async function delProduct(id){if(!confirm('Delete this product permanently?'))return;try{await api('/api/products/delete','POST',{id});goBack()}catch(e){msg(e.message)}}
+const mediaEditor=m=>`<label><b>Current photos & videos</b> <small>(tick to remove)</small></label><div class="thumbs" style="gap:10px">${m.map(x=>`<label style="width:auto">${x.kind==='video'?`<video src="${x.url}" style="width:90px;height:70px"></video>`:`<img src="${x.url}" style="width:90px;height:70px">`}<br><input type="checkbox" class="rm" value="${x.url}" style="width:auto"> remove</label>`).join('')||'<small>None</small>'}</div>
+  <label><b>Add more photos & videos</b></label><input id="em" type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime"><div id="prog"></div>`;
+const removed=()=>[...document.querySelectorAll('.rm:checked')].map(c=>c.value);
+function editProduct(id){
+  const i=window._mine.find(x=>x.id===id);
+  $('#app').innerHTML=`<main style="max-width:640px"><div id="m"></div><div class="panel"><h3>Edit product</h3>
+  <select id="ek">${opts(CATS)}</select><select id="ec">${opts(COUNTRIES)}</select>
+  <input id="en" value="${esc(i.name)}" placeholder="Product name"><textarea id="ed">${esc(i.description)}</textarea>
+  <input id="ep" type="number" step="0.01" value="${i.price}"><input id="eu" value="${esc(i.unit)}"><input id="es" type="number" value="${i.stock}">
+  ${mediaEditor(i.media)}<br><button id="sb" onclick="saveProduct(${id})">Save changes</button> <button class="alt" onclick="goBack()">Cancel</button></div></main>`;
+  $('#ek').value=i.category;$('#ec').value=i.country}
+async function saveProduct(id){
+  const btn=$('#sb');btn.disabled=true;
+  try{const media=await uploadFiles([...$('#em').files]);
+    await api('/api/products/update','POST',{id,name:$('#en').value,category:$('#ek').value,country:$('#ec').value,description:$('#ed').value,price:$('#ep').value,unit:$('#eu').value,stock:$('#es').value,media,remove_media:removed()});
+    goBack();setTimeout(()=>msg('Product updated',1),100)}catch(e){msg(e.message);btn.disabled=false}}
+function editProperty(id){
+  const p=window._mineP.find(x=>x.id===id);
+  $('#app').innerHTML=`<main style="max-width:640px"><div id="m"></div><div class="panel"><h3>Edit listing</h3>
+  <select id="rt" onchange="toggleType()"><option value="house">House</option><option value="land">Land / plot</option></select>
+  <input id="rn" value="${esc(p.title)}"><textarea id="rd">${esc(p.description)}</textarea><input id="rp" type="number" step="0.01" value="${p.price}">
+  <select id="rc">${opts(COUNTRIES)}</select><input id="ry" value="${esc(p.city)}"><input id="ra" value="${esc(p.address)}">
+  <div style="display:flex;gap:8px"><input id="rz" type="number" step="any" value="${p.area??''}"><select id="ru"><option value="sqm">m²</option><option value="sqft">sq ft</option><option value="acres">acres</option><option value="hectares">hectares</option></select></div>
+  <div id="hf"><div style="display:flex;gap:8px"><input id="rb" type="number" placeholder="Bedrooms" value="${p.bedrooms??''}"><input id="rh" type="number" placeholder="Bathrooms" value="${p.bathrooms??''}"><input id="rY" type="number" placeholder="Year built" value="${p.year_built??''}"></div>
+  <input id="rf" placeholder="Features" value="${esc(p.features)}"></div>
+  <div id="lf" style="display:none"><input id="rzo" placeholder="Zoning" value="${esc(p.zoning)}"><input id="rtd" placeholder="Title / deed" value="${esc(p.title_deed)}"><input id="rut" placeholder="Utilities" value="${esc(p.utilities)}"></div>
+  ${mediaEditor(p.media)}<br><button id="sb" onclick="saveProperty(${id})">Save changes</button> <button class="alt" onclick="goBack2()">Cancel</button></div></main>`;
+  $('#rt').value=p.type;$('#rc').value=p.country;$('#ru').value=p.area_unit;toggleType()}
+const goBack2=()=>me.role==='admin'?manage():sell();
+async function saveProperty(id){
+  const btn=$('#sb');btn.disabled=true;
+  try{const media=await uploadFiles([...$('#em').files]);const v=x=>$('#'+x).value;
+    await api('/api/properties/update','POST',{id,type:v('rt'),title:v('rn'),description:v('rd'),price:v('rp'),country:v('rc'),city:v('ry'),address:v('ra'),area:v('rz'),area_unit:v('ru'),
+      bedrooms:v('rb'),bathrooms:v('rh'),year_built:v('rY'),features:v('rf'),zoning:v('rzo'),title_deed:v('rtd'),utilities:v('rut'),media,remove_media:removed()});
+    goBack2();setTimeout(()=>msg('Listing updated',1),100)}catch(e){msg(e.message);btn.disabled=false}}
+async function delProperty(id){if(!confirm('Delete this listing permanently?'))return;try{await api('/api/properties/delete','POST',{id});goBack2()}catch(e){msg(e.message)}}
+async function manage(){
+  const [pr,pp]=await Promise.all([api('/api/my-products'),api('/api/my-properties')]);window._mine=pr;window._mineP=pp;
+  $('#app').innerHTML=`<main><div id="m"></div><h2>Manage all posts</h2><h3>Products (${pr.length})</h3><div class="grid">${pr.map(prodManageCard).join('')||'<p>None</p>'}</div>
+  <h3>Houses & land (${pp.length})</h3><div class="grid">${pp.map(x=>propCard(x,false,true)).join('')||'<p>None</p>'}</div></main>`}
+async function uploadFiles(files){
+  const media=[];
+  for(const [i,f] of files.entries()){
+    $('#prog').textContent=`Uploading ${i+1}/${files.length}: ${f.name}…`;
+    const r=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':f.type,Authorization:'Bearer '+token},body:f});
+    const t=await r.text();let j={};try{j=JSON.parse(t)}catch{}
+    if(!r.ok)throw new Error(`${f.name}: ${j.error||'upload failed ('+r.status+')'}`);
+    media.push({url:j.url})}
+  return media}
+async function upload(){
+  const btn=$('#pb');btn.disabled=true;
+  try{const media=await uploadFiles([...$('#pi').files]);
+    await api('/api/products','POST',{name:$('#pn').value,category:$('#pk').value,country:$('#pc').value,description:$('#pd').value,price:$('#pp').value,unit:$('#pu').value,stock:$('#ps').value,media});
+    supplier();setTimeout(()=>msg('Product published',1),50)}catch(e){msg(e.message);$('#prog').textContent='';btn.disabled=false}}
+function checkout(){
+  if(!me)return auth();
+  if(me.role!=='buyer')return alert('Log in as a buyer to order');
+  const sub=cart.reduce((s,i)=>s+i.price*i.qty,0);
+  $('#app').innerHTML=`<main style="max-width:640px"><div id="m"></div><h2>Checkout</h2><table>${cart.map((i,n)=>`<tr><td>${esc(i.name)}</td><td><input type="number" min="0" value="${i.qty}" style="width:70px;margin:0" onchange="cart[${n}].qty=Math.max(0,+this.value);cart=cart.filter(x=>x.qty);saveCart();checkout()"></td><td>${money(i.price*i.qty)}</td></tr>`).join('')}
+  <tr><th colspan="2">Total</th><th>${money(sub)}</th></tr></table><div class="panel"><h3>Delivery</h3>
+  <textarea id="ad" placeholder="Full delivery address, including country"></textarea>
+  <h3>Payment</h3><select id="pm" onchange="$('#cd').style.display=this.value==='card'?'block':'none'"><option value="cod">Cash on delivery</option><option value="card">Card (Visa / Mastercard / Discover)</option></select>
+  <div id="cd" style="display:none"><input id="cn" placeholder="Card number" autocomplete="cc-number"><input id="cm" placeholder="MM" style="width:30%;display:inline"><input id="cy" placeholder="YYYY" style="width:30%;display:inline"><input id="cv" placeholder="CVC" style="width:30%;display:inline"></div>
+  <small>Card payments are held in escrow and released to the supplier on delivery.</small><br><br>
+  <button onclick="place()" ${cart.length?'':'disabled'}>Place order</button></div></main>`}
+async function place(){
+  try{const r=await api('/api/orders','POST',{items:cart.map(i=>({id:i.id,qty:i.qty})),address:$('#ad').value,payment_method:$('#pm').value,
+    card:{number:$('#cn').value,exp_month:$('#cm').value,exp_year:$('#cy').value,cvc:$('#cv').value}});
+    cart=[];saveCart();orders();setTimeout(()=>msg(`Order placed (${money(r.total)})`,1),50)}catch(e){msg(e.message)}}
+async function orders(){
+  const a=await api('/api/orders');
+  $('#app').innerHTML=`<main><div id="m"></div><h2>Orders</h2><table><tr><th>#</th><th>Items</th><th>Subtotal</th><th>5% fee</th><th>Payout</th><th>Payment</th><th>Status</th><th></th></tr>
+  ${a.map(o=>`<tr><td>${o.id}</td><td>${o.items.map(i=>esc(i.name)+' ×'+i.qty).join('<br>')}</td><td>${money(o.subtotal)}</td><td>${money(o.commission)}</td><td>${money(o.supplier_payout)}</td>
+  <td>${o.payment_method==='cod'?'Cash on delivery':esc(o.card_brand)+' ••'+esc(o.card_last4)}<br><small>${esc(o.payment_status)}</small></td><td>${esc(o.status)}</td>
+  <td>${me.role==='supplier'&&o.status!=='delivered'?`<button onclick="adv(${o.id},'${o.status==='pending'?'shipped':'delivered'}')">Mark ${o.status==='pending'?'shipped':'delivered'}</button>`:''}</td></tr>`).join('')}</table></main>`}
+async function adv(id,status){try{await api('/api/orders/status','POST',{id,status});orders()}catch(e){msg(e.message)}}
+async function admin(){const s=await api('/api/admin/summary');
+  $('#app').innerHTML=`<main><h2>Platform dashboard</h2><div class="panel">Orders: <b>${s.orders}</b><br>Gross merchandise value: <b>${money(s.gmv)}</b><br>Commission earned (delivered): <b>${money(s.earned_commission)}</b><br>Commission pending: <b>${money(s.pending_commission)}</b></div></main>`}
+const AREA={sqm:'m²',sqft:'sq ft',acres:'acres',hectares:'ha'};
+const mediaHtml=m=>!m.length?'<div class="ph"></div>':m[0].kind==='video'?`<video src="${m[0].url}" controls preload="metadata" style="width:100%;height:170px;object-fit:cover;background:#000"></video>`:`<img src="${m[0].url}" alt="" style="height:170px">`;
+function propCard(p,contact,actions){
+  const house=p.type==='house';
+  return `<div class="card">${mediaHtml(p.media)}<div><span class="tag">${house?'House':'Land'} for sale</span>
+  <h4 style="margin:6px 0">${esc(p.title)}</h4><span class="price">${money(p.price)}</span><br>
+  <small>${esc(p.city)}, ${esc(p.country)}${p.address?'<br>'+esc(p.address):''}</small>
+  <p>${house?`${p.bedrooms??'–'} bed · ${p.bathrooms??'–'} bath · `:''}${p.area} ${AREA[p.area_unit]||''}${p.year_built?` · built ${p.year_built}`:''}</p>
+  ${p.zoning?`<small>Zoning: ${esc(p.zoning)}</small><br>`:''}${p.title_deed?`<small>Title/deed: ${esc(p.title_deed)}</small><br>`:''}
+  ${p.utilities?`<small>Utilities: ${esc(p.utilities)}</small><br>`:''}${p.features?`<small>Features: ${esc(p.features)}</small><br>`:''}
+  <p>${esc(p.description).slice(0,160)}</p>
+  ${p.media.length>1?`<div class="thumbs">${p.media.slice(1).map(m=>m.kind==='video'?`<video src="${m.url}" controls preload="none"></video>`:`<a href="${m.url}" target="_blank"><img src="${m.url}" alt=""></a>`).join('')}</div>`:''}
+  ${contact?`<button onclick="contactSeller(${p.id},this)">Contact seller</button>`:''}${actions?`<button onclick="editProperty(${p.id})">Edit</button> <button class="alt" onclick="delProperty(${p.id})">Delete</button>`:''}</div></div>`}
+async function contactSeller(id,btn){
+  if(!me)return auth();
+  try{const c=await api('/api/properties/contact?id='+id);btn.outerHTML=`<b>${esc(c.company||c.name)}</b><br><a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`}catch(e){msg(e.message)}}
+function homes(){
+  $('#app').innerHTML=`<div class="hero"><h2>Houses & Land for Sale</h2><p>Browse homes and plots listed directly by owners and agents</p></div>
+  <main><div class="filters"><select id="ht" onchange="loadHomes()"><option value="">Houses & land</option><option value="house">Houses</option><option value="land">Land</option></select>
+  <select id="hc" onchange="loadHomes()">${opts(COUNTRIES,'All countries')}</select><input id="hy" placeholder="City" oninput="loadHomes()">
+  <input id="hp" type="number" placeholder="Max price (USD)" oninput="loadHomes()"></div><div id="m"></div><div class="grid" id="plist"></div></main>`;loadHomes()}
+async function loadHomes(){
+  const p=new URLSearchParams({type:$('#ht').value,country:$('#hc').value,city:$('#hy').value,max_price:$('#hp').value});
+  const a=await api('/api/properties?'+p);
+  $('#plist').innerHTML=a.map(x=>propCard(x,true)).join('')||'<p>No listings found.</p>'}
+function sell(){
+  $('#app').innerHTML=`<main><div id="m"></div><div class="panel"><h3>List a house or land for sale</h3>
+  <select id="rt" onchange="toggleType()"><option value="house">House</option><option value="land">Land / plot</option></select>
+  <input id="rn" placeholder="Listing title (e.g. 4-bedroom villa with garden)"><textarea id="rd" placeholder="Description"></textarea>
+  <input id="rp" type="number" step="0.01" placeholder="Asking price (USD)">
+  <select id="rc">${opts(COUNTRIES)}</select><input id="ry" placeholder="City / region"><input id="ra" placeholder="Street address or locality">
+  <div style="display:flex;gap:8px"><input id="rz" type="number" step="any" placeholder="Size / area"><select id="ru"><option value="sqm">m²</option><option value="sqft">sq ft</option><option value="acres">acres</option><option value="hectares">hectares</option></select></div>
+  <div id="hf"><div style="display:flex;gap:8px"><input id="rb" type="number" placeholder="Bedrooms"><input id="rh" type="number" placeholder="Bathrooms"><input id="rY" type="number" placeholder="Year built"></div>
+  <input id="rf" placeholder="Features (e.g. pool, garage, solar, garden)"></div>
+  <div id="lf" style="display:none"><input id="rzo" placeholder="Zoning / permitted use (residential, farming, commercial)"><input id="rtd" placeholder="Title / deed status (e.g. freehold, registered title)"><input id="rut" placeholder="Utilities (water, electricity, road access)"></div>
+  <label><b>Photos & videos</b> <small>(PNG/JPG/WEBP up to 10MB, MP4/WEBM/MOV up to 200MB)</small></label>
+  <input id="rm" type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime">
+  <div id="prog"></div><button id="rb2" onclick="publishProp()">Publish listing</button></div>
+  <h3>My listings</h3><div class="grid" id="mineP"></div></main>`;
+  $('#rc').value=me.country;(async()=>{const a=await api('/api/my-properties');window._mineP=a;$('#mineP').innerHTML=a.map(x=>propCard(x,false,true)).join('')})()}
+function toggleType(){const l=$('#rt').value==='land';$('#hf').style.display=l?'none':'block';$('#lf').style.display=l?'block':'none'}
+async function publishProp(){
+  const btn=$('#rb2');btn.disabled=true;
+  try{const files=[...$('#rm').files];if(!files.length)throw new Error('Add at least one photo or video');
+    const media=[];
+    for(const [i,f] of files.entries()){
+      $('#prog').textContent=`Uploading ${i+1}/${files.length}: ${f.name}…`;
+      const r=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':f.type,Authorization:'Bearer '+token},body:f});
+      const t=await r.text();let j={};try{j=JSON.parse(t)}catch{}
+      if(!r.ok)throw new Error(`${f.name}: ${j.error||'upload failed ('+r.status+')'}`);
+      media.push({url:j.url})}
+    const v=id=>$('#'+id).value;
+    await api('/api/properties','POST',{type:v('rt'),title:v('rn'),description:v('rd'),price:v('rp'),country:v('rc'),city:v('ry'),address:v('ra'),area:v('rz'),area_unit:v('ru'),
+      bedrooms:v('rb'),bathrooms:v('rh'),year_built:v('rY'),features:v('rf'),zoning:v('rzo'),title_deed:v('rtd'),utilities:v('rut'),media});
+    sell();setTimeout(()=>msg('Listing published',1),100)
+  }catch(e){msg(e.message);$('#prog').textContent='';btn.disabled=false}}
+(async()=>{if(token){try{me=(await api('/api/me')).user}catch{}}nav();shop()})();
+</script></body></html>

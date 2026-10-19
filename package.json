@@ -1,0 +1,8 @@
+{
+  "name": "buildchain",
+  "version": "1.0.0",
+  "description": "Global building materials marketplace with 5% commission",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=22.13" }
+}
